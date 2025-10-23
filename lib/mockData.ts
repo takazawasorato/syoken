@@ -1,5 +1,5 @@
 import { AnalysisResult } from '@/types';
-import jstatSampleData from './jstat-sample-response-drivetime.json';
+import jstatSampleData from '../dev-data/jstat-sample-response-drivetime.json';
 
 // サンプルデータ: 東京都新宿区戸山一丁目のジム分析結果（半径1km）
 // 実際のjSTAT MAPデータ（RichReport_1758909913053.xlsx）に基づく
