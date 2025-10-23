@@ -3,11 +3,12 @@ import { JStatResponse, PopulationData } from '@/types';
 
 export async function POST(request: NextRequest) {
   try {
-    const { lat, lng, radiusKm } = await request.json();
+    const body = await request.json();
+    const { lat, lng, rangeType, radius1, radius2, radius3, time1, time2, time3, speed, travelMode } = body;
 
-    if (!lat || !lng || !radiusKm) {
+    if (!lat || !lng || !rangeType) {
       return NextResponse.json(
-        { error: '緯度、経度、半径が必要です' },
+        { error: '緯度、経度、範囲タイプが必要です' },
         { status: 400 }
       );
     }
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // jSTAT MAP APIのパラメータを構築
+    // jSTAT MAP APIの基本パラメータを構築
     const params = new URLSearchParams({
       category: 'richReport',
       func: 'getSummary',
@@ -31,14 +32,40 @@ export async function POST(request: NextRequest) {
       lat: lat.toString(),
       lng: lng.toString(),
       output: 'json',
-      rangeType: 'circle',
-      radius: (radiusKm * 1000).toString(), // kmをmに変換
+      rangeType: rangeType,
     });
+
+    // 範囲タイプに応じてパラメータを追加
+    if (rangeType === 'circle') {
+      // 3つの半径を設定（デフォルト: 500m, 1000m, 2000m）
+      const r1 = radius1 || 500;
+      const r2 = radius2 || 1000;
+      const r3 = radius3 || 2000;
+      // カンマ区切りで3つの半径を指定（jstat.jsの実装に従う）
+      params.append('radius', `${r1},${r2},${r3}`);
+    } else if (rangeType === 'driveTime') {
+      // 3つの到達時間を設定（デフォルト: 5分, 10分, 20分）
+      const t1 = time1 || 5;
+      const t2 = time2 || 10;
+      const t3 = time3 || 20;
+      // カンマ区切りで3つの時間を指定（jstat.jsの実装に従う）
+      params.append('time', `${t1},${t2},${t3}`);
+      params.append('speed', (speed || 30).toString());
+      params.append('travelMode', travelMode || 'car');
+    }
 
     const url = `https://jstatmap.e-stat.go.jp/statmap/api/1.00?${params.toString()}`;
 
+    console.log('jSTAT MAP API URL:', url);
+
     const response = await fetch(url);
     const data: JStatResponse = await response.json();
+
+    console.log('jSTAT MAP API Response - Available areas:',
+      data.GET_SUMMARY?.DATASET_INF?.[0]?.TABLE_INF?.[0]?.CLASS_INF?.CLASS_OBJ
+        ?.find((c: any) => c['@name']?.includes('集計範囲'))
+        ?.CLASS?.map((c: any) => `${c['@code']}:${c['@name']}`) || 'N/A'
+    );
 
     // エラーチェック
     if (

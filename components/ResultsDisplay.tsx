@@ -2,26 +2,141 @@
 
 import { AnalysisResult } from '@/types';
 import { exportToCSV } from '@/lib/csvExport';
+import { memo, useState, useMemo } from 'react';
 
 interface ResultsDisplayProps {
   result: AnalysisResult;
   onExportToSheets: () => void;
   isExporting: boolean;
+  category?: string;
+  rangeType: 'circle' | 'driveTime';
+  rangeParams: {
+    radius1?: number;
+    radius2?: number;
+    radius3?: number;
+    time1?: number;
+    time2?: number;
+    time3?: number;
+    speed?: number;
+    travelMode?: string;
+  };
 }
 
-export default function ResultsDisplay({
+// Simple Bar Chart Component
+const BarChart = memo(({ data, colors }: { data: { label: string; value: number; color: string }[]; colors?: string[] }) => {
+  const maxValue = Math.max(...data.map(d => d.value));
+
+  return (
+    <div className="space-y-3">
+      {data.map((item, index) => (
+        <div key={item.label} className="space-y-1">
+          <div className="flex justify-between text-sm">
+            <span className="font-medium text-gray-700">{item.label}</span>
+            <span className="font-bold text-gray-900">{item.value.toLocaleString()}</span>
+          </div>
+          <div className="h-8 bg-gray-100 rounded-lg overflow-hidden relative">
+            <div
+              className="h-full rounded-lg transition-all duration-500 ease-out flex items-center justify-end pr-3"
+              style={{
+                width: `${(item.value / maxValue) * 100}%`,
+                background: item.color || `hsl(${210 + index * 30}, 70%, 50%)`
+              }}
+            >
+              <span className="text-xs font-bold text-white drop-shadow">
+                {((item.value / maxValue) * 100).toFixed(0)}%
+              </span>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+});
+BarChart.displayName = 'BarChart';
+
+// Pie Chart Component using SVG
+const PieChart = memo(({ data }: { data: { label: string; value: number; color: string }[] }) => {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+  let currentAngle = -90;
+
+  const slices = data.map((item) => {
+    const percentage = (item.value / total) * 100;
+    const angle = (item.value / total) * 360;
+    const startAngle = currentAngle;
+    const endAngle = currentAngle + angle;
+    currentAngle = endAngle;
+
+    const startRad = (startAngle * Math.PI) / 180;
+    const endRad = (endAngle * Math.PI) / 180;
+
+    const x1 = 50 + 40 * Math.cos(startRad);
+    const y1 = 50 + 40 * Math.sin(startRad);
+    const x2 = 50 + 40 * Math.cos(endRad);
+    const y2 = 50 + 40 * Math.sin(endRad);
+
+    const largeArc = angle > 180 ? 1 : 0;
+
+    return {
+      ...item,
+      path: `M 50 50 L ${x1} ${y1} A 40 40 0 ${largeArc} 1 ${x2} ${y2} Z`,
+      percentage
+    };
+  });
+
+  return (
+    <div className="flex items-center gap-6">
+      <svg viewBox="0 0 100 100" className="w-48 h-48">
+        {slices.map((slice, index) => (
+          <g key={index}>
+            <path
+              d={slice.path}
+              fill={slice.color}
+              className="transition-all duration-300 hover:opacity-80"
+            />
+          </g>
+        ))}
+      </svg>
+      <div className="space-y-2">
+        {slices.map((slice, index) => (
+          <div key={index} className="flex items-center gap-2 text-sm">
+            <div className="w-4 h-4 rounded" style={{ background: slice.color }}></div>
+            <span className="text-gray-700">{slice.label}</span>
+            <span className="font-bold text-gray-900">{slice.percentage.toFixed(1)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+});
+PieChart.displayName = 'PieChart';
+
+const ResultsDisplay = ({
   result,
   onExportToSheets,
   isExporting,
-}: ResultsDisplayProps) {
+  category = '施設',
+  rangeType,
+  rangeParams,
+}: ResultsDisplayProps) => {
+  const [activeTab, setActiveTab] = useState<'overview' | 'demographics' | 'competitors'>('overview');
+  // 範囲の説明を生成
+  const getRangeDescription = () => {
+    if (rangeType === 'circle') {
+      return `円形: ${rangeParams.radius1}m / ${rangeParams.radius2}m / ${rangeParams.radius3}m`;
+    } else {
+      return `到達圏: ${rangeParams.time1}分 / ${rangeParams.time2}分 / ${rangeParams.time3}分 (${rangeParams.speed}km/h)`;
+    }
+  };
+
   const handleCSVExport = () => {
     const exportData = {
       basicInfo: {
         address: result.address,
         latitude: result.coordinates.lat,
         longitude: result.coordinates.lng,
-        category: '施設', // この値は親コンポーネントから渡す必要があります
-        radius: 1, // この値も親コンポーネントから渡す必要があります
+        category,
+        rangeType,
+        rangeDescription: getRangeDescription(),
       },
       population: result.population,
       competitors: result.competitors.map((c) => ({
@@ -37,137 +152,479 @@ export default function ResultsDisplay({
     exportToCSV(exportData);
   };
 
+  const handleRichReportExport = async () => {
+    try {
+      const exportData = {
+        basicInfo: {
+          address: result.address,
+          latitude: result.coordinates.lat,
+          longitude: result.coordinates.lng,
+          category,
+          rangeType,
+          rangeDescription: getRangeDescription(),
+          rangeParams, // 範囲パラメータ（radius1/2/3 or time1/2/3）を追加
+        },
+        population: result.population,
+        competitors: result.competitors.map((c) => ({
+          name: c.name,
+          address: c.vicinity || '',
+          distance: c.distance || 0,
+          rating: c.rating,
+          userRatingsTotal: c.user_ratings_total,
+          placeId: c.place_id,
+          url: c.url,
+          area: c.area,
+        })),
+        rawData: result.population.rawData, // jSTAT MAP APIの生データを含める
+      };
+
+      const response = await fetch('/api/export/richreport', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(exportData),
+      });
+
+      if (!response.ok) {
+        throw new Error('レポートの生成に失敗しました');
+      }
+
+      // Excelファイルをダウンロード
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `RichReport_${Date.now()}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('RichReport export error:', error);
+      alert('レポートの生成に失敗しました');
+    }
+  };
+
+  // Prepare chart data
+  const ageChartData = useMemo(() => {
+    if (!result.population.ageGroups) return [];
+    return Object.entries(result.population.ageGroups).map(([age, counts]) => ({
+      label: age,
+      value: counts.total,
+      color: `hsl(${Math.random() * 360}, 70%, 50%)`
+    }));
+  }, [result.population.ageGroups]);
+
+  const genderChartData = useMemo(() => {
+    if (!result.population.ageGroups) return [];
+    const totals = Object.values(result.population.ageGroups).reduce(
+      (acc, counts) => ({
+        male: acc.male + counts.male,
+        female: acc.female + counts.female,
+      }),
+      { male: 0, female: 0 }
+    );
+    return [
+      { label: '男性', value: totals.male, color: '#3B82F6' },
+      { label: '女性', value: totals.female, color: '#EC4899' },
+    ];
+  }, [result.population.ageGroups]);
+
+  const competitorsByArea = useMemo(() => [
+    { label: '1次エリア', value: result.competitors.filter(p => p.area === 1).length, color: '#3B82F6' },
+    { label: '2次エリア', value: result.competitors.filter(p => p.area === 2).length, color: '#10B981' },
+    { label: '3次エリア', value: result.competitors.filter(p => p.area === 3).length, color: '#F59E0B' },
+  ], [result.competitors]);
+
   return (
     <div className="space-y-6">
-      {/* 基本情報 */}
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <h3 className="text-xl font-bold text-gray-800 mb-4">基本情報</h3>
-        <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <dt className="text-sm font-medium text-gray-500">住所</dt>
-            <dd className="text-base text-gray-900">{result.address}</dd>
-          </div>
-          <div>
-            <dt className="text-sm font-medium text-gray-500">座標</dt>
-            <dd className="text-base text-gray-900">
-              {result.coordinates.lat.toFixed(6)}, {result.coordinates.lng.toFixed(6)}
-            </dd>
-          </div>
-        </dl>
-      </div>
-
-      {/* 人口統計 */}
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <h3 className="text-xl font-bold text-gray-800 mb-4">人口統計</h3>
-        <div className="mb-4">
-          <span className="text-sm font-medium text-gray-500">総人口</span>
-          <p className="text-3xl font-bold text-blue-600">
-            {result.population.totalPopulation.toLocaleString()} 人
-          </p>
-        </div>
-
-        {result.population.ageGroups && (
-          <div className="mt-6">
-            <h4 className="text-lg font-semibold text-gray-700 mb-3">年齢別人口</h4>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                      年齢層
-                    </th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                      総数
-                    </th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                      男性
-                    </th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                      女性
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {Object.entries(result.population.ageGroups).map(([age, counts]) => (
-                    <tr key={age}>
-                      <td className="px-4 py-2 text-sm text-gray-900">{age}</td>
-                      <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                        {counts.total.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                        {counts.male.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                        {counts.female.toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Total Population Card */}
+        <div className="bg-primary-600 p-6 rounded-lg shadow-md text-white transition-all duration-200 hover:shadow-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-primary-100 text-sm font-medium mb-1">総人口</p>
+              <p className="text-4xl font-bold">{result.population.totalPopulation.toLocaleString()}</p>
+              <p className="text-primary-100 text-xs mt-1">人</p>
+            </div>
+            <div className="bg-white/20 p-3 rounded-lg">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
             </div>
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* 競合施設 */}
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <h3 className="text-xl font-bold text-gray-800 mb-4">
-          競合施設 ({result.competitors.length}件)
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                  施設名
-                </th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                  距離(m)
-                </th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                  評価
-                </th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                  レビュー数
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {result.competitors.slice(0, 20).map((place) => (
-                <tr key={place.place_id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 text-sm text-gray-900">{place.name}</td>
-                  <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                    {place.distance?.toLocaleString() || 'N/A'}
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                    {place.rating || 'N/A'}
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                    {place.user_ratings_total?.toLocaleString() || 'N/A'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {/* Total Competitors Card */}
+        <div className="bg-success-600 p-6 rounded-lg shadow-md text-white transition-all duration-200 hover:shadow-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-success-100 text-sm font-medium mb-1">競合施設</p>
+              <p className="text-4xl font-bold">{result.competitors.length}</p>
+              <p className="text-success-100 text-xs mt-1">件</p>
+            </div>
+            <div className="bg-white/20 p-3 rounded-lg">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        {/* Category Card */}
+        <div className="bg-gray-700 p-6 rounded-lg shadow-md text-white transition-all duration-200 hover:shadow-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-300 text-sm font-medium mb-1">カテゴリ</p>
+              <p className="text-2xl font-bold">{category}</p>
+              <p className="text-gray-300 text-xs mt-1">{getRangeDescription()}</p>
+            </div>
+            <div className="bg-white/20 p-3 rounded-lg">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+              </svg>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* エクスポートボタン */}
-      <div className="flex gap-4">
+      {/* Tab Navigation */}
+      <div className="card overflow-hidden p-0">
+        <div className="border-b border-gray-200">
+          <nav className="flex" role="tablist" aria-label="分析結果タブ">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`flex-1 px-6 py-4 text-sm font-semibold transition-all duration-200 ${
+                activeTab === 'overview'
+                  ? 'bg-primary-50 text-primary-700 border-b-2 border-primary-600'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+              role="tab"
+              aria-selected={activeTab === 'overview'}
+              aria-controls="overview-panel"
+            >
+              <div className="flex items-center justify-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                概要
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('demographics')}
+              className={`flex-1 px-6 py-4 text-sm font-semibold transition-all duration-200 ${
+                activeTab === 'demographics'
+                  ? 'bg-primary-50 text-primary-700 border-b-2 border-primary-600'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+              role="tab"
+              aria-selected={activeTab === 'demographics'}
+              aria-controls="demographics-panel"
+            >
+              <div className="flex items-center justify-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                人口統計
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('competitors')}
+              className={`flex-1 px-6 py-4 text-sm font-semibold transition-all duration-200 ${
+                activeTab === 'competitors'
+                  ? 'bg-primary-50 text-primary-700 border-b-2 border-primary-600'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`}
+              role="tab"
+              aria-selected={activeTab === 'competitors'}
+              aria-controls="competitors-panel"
+            >
+              <div className="flex items-center justify-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+                競合施設
+              </div>
+            </button>
+          </nav>
+        </div>
+
+        {/* Tab Content */}
+        <div className="p-6">
+          {/* Overview Tab */}
+          {activeTab === 'overview' && (
+            <div id="overview-panel" role="tabpanel" aria-labelledby="overview-tab" className="space-y-6 animate-fade-in">
+              <div className="bg-white p-6 rounded-xl border border-gray-100">
+                <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  基本情報
+                </h3>
+                <dl className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <dt className="text-sm font-semibold text-gray-600 mb-1">住所</dt>
+                    <dd className="text-base text-gray-900">{result.address}</dd>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <dt className="text-sm font-semibold text-gray-600 mb-1">座標</dt>
+                    <dd className="text-base text-gray-900 font-mono">
+                      {result.coordinates.lat.toFixed(6)}, {result.coordinates.lng.toFixed(6)}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl border border-gray-100">
+                <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  エリア別競合施設分布
+                </h3>
+                <BarChart data={competitorsByArea} />
+              </div>
+            </div>
+          )}
+
+          {/* Demographics Tab */}
+          {activeTab === 'demographics' && (
+            <div id="demographics-panel" role="tabpanel" aria-labelledby="demographics-tab" className="space-y-6 animate-fade-in">
+              <div className="bg-white p-6 rounded-xl border border-gray-100">
+                <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                  性別分布
+                </h3>
+                {genderChartData.length > 0 && <PieChart data={genderChartData} />}
+              </div>
+
+              {result.population.ageGroups && (
+                <div className="bg-white p-6 rounded-xl border border-gray-100">
+                  <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                    年齢別人口
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                            年齢層
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">
+                            総数
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">
+                            男性
+                          </th>
+                          <th className="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">
+                            女性
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {Object.entries(result.population.ageGroups).map(([age, counts], index) => (
+                          <tr key={age} className={`hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{age}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-semibold">
+                              {counts.total.toLocaleString()}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-blue-600 text-right font-medium">
+                              {counts.male.toLocaleString()}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-pink-600 text-right font-medium">
+                              {counts.female.toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Competitors Tab */}
+          {activeTab === 'competitors' && (
+            <div id="competitors-panel" role="tabpanel" aria-labelledby="competitors-tab" className="space-y-6 animate-fade-in">
+              {[1, 2, 3].map((areaNum) => {
+                const areaPlaces = result.competitors.filter(p => p.area === areaNum);
+                if (areaPlaces.length === 0) return null;
+
+                const areaColors = {
+                  1: {
+                    bg: 'bg-blue-50',
+                    border: 'border-blue-300',
+                    text: 'text-blue-800',
+                    gradient: 'from-blue-500 to-blue-600',
+                    badgeBg: 'bg-blue-100',
+                    badgeText: 'text-blue-700'
+                  },
+                  2: {
+                    bg: 'bg-green-50',
+                    border: 'border-green-300',
+                    text: 'text-green-800',
+                    gradient: 'from-green-500 to-green-600',
+                    badgeBg: 'bg-green-100',
+                    badgeText: 'text-green-700'
+                  },
+                  3: {
+                    bg: 'bg-yellow-50',
+                    border: 'border-yellow-300',
+                    text: 'text-yellow-800',
+                    gradient: 'from-yellow-500 to-yellow-600',
+                    badgeBg: 'bg-yellow-100',
+                    badgeText: 'text-yellow-700'
+                  },
+                };
+                const colors = areaColors[areaNum as 1 | 2 | 3];
+
+                return (
+                  <div key={areaNum} className="bg-white p-6 rounded-xl border border-gray-100">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-xl font-bold flex items-center gap-3">
+                        <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-r ${colors.gradient} text-white text-sm font-bold`}>
+                          {areaNum}
+                        </span>
+                        <span className={colors.text}>{areaNum}次エリア</span>
+                      </h4>
+                      <span className={`${colors.badgeBg} ${colors.badgeText} px-4 py-2 rounded-full text-sm font-bold`}>
+                        {areaPlaces.length}件
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className={`${colors.bg}`}>
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                              施設名
+                            </th>
+                            <th className="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">
+                              距離
+                            </th>
+                            <th className="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">
+                              評価
+                            </th>
+                            <th className="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">
+                              レビュー数
+                            </th>
+                            <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                              リンク
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {areaPlaces.map((place, index) => (
+                            <tr key={place.place_id} className={`hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                              <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                                {place.name}
+                              </td>
+                              <td className="px-6 py-4 text-sm text-gray-900 text-right font-semibold">
+                                {place.distance ? `${place.distance.toLocaleString()}m` : 'N/A'}
+                              </td>
+                              <td className="px-6 py-4 text-sm text-right">
+                                {place.rating ? (
+                                  <div className="flex items-center justify-end gap-1">
+                                    <span className="font-bold text-yellow-600">{place.rating}</span>
+                                    <svg className="w-4 h-4 text-yellow-400 fill-current" viewBox="0 0 20 20">
+                                      <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
+                                    </svg>
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400">N/A</span>
+                                )}
+                              </td>
+                              <td className="px-6 py-4 text-sm text-gray-600 text-right font-medium">
+                                {place.user_ratings_total?.toLocaleString() || 'N/A'}
+                              </td>
+                              <td className="px-6 py-4 text-sm text-center">
+                                {place.url && (
+                                  <a
+                                    href={place.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                                    aria-label={`${place.name}の地図を開く`}
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                                    </svg>
+                                    地図
+                                  </a>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Export Buttons */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <button
           onClick={handleCSVExport}
-          className="flex-1 bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 transition-colors font-medium"
+          className="btn-secondary py-4 px-6 flex items-center justify-center gap-2"
+          aria-label="CSVファイルをダウンロード"
         >
-          CSVでダウンロード
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          CSVダウンロード
+        </button>
+        <button
+          onClick={handleRichReportExport}
+          className="btn-primary py-4 px-6 flex items-center justify-center gap-2"
+          aria-label="Excelレポートをダウンロード"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Excelレポート
         </button>
         <button
           onClick={onExportToSheets}
           disabled={isExporting}
-          className="flex-1 bg-purple-600 text-white py-3 px-4 rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
+          className={`py-4 px-6 flex items-center justify-center gap-2 ${
+            isExporting
+              ? 'btn-secondary opacity-60 cursor-not-allowed'
+              : 'btn-secondary'
+          }`}
+          aria-label={isExporting ? 'エクスポート中です' : 'Googleスプレッドシートにエクスポート'}
         >
-          {isExporting ? 'エクスポート中...' : 'Googleスプレッドシートへ出力'}
+          {isExporting ? (
+            <>
+              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              エクスポート中...
+            </>
+          ) : (
+            <>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              スプレッドシート
+            </>
+          )}
         </button>
       </div>
     </div>
   );
-}
+};
+
+export default memo(ResultsDisplay);

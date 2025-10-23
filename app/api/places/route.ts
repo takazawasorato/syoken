@@ -37,7 +37,7 @@ function calculateDistance(
 
 export async function POST(request: NextRequest) {
   try {
-    const { lat, lng, radiusKm, keyword } = await request.json();
+    const { lat, lng, radiusKm, keyword, radius1, radius2, radius3 } = await request.json();
 
     if (!lat || !lng || !radiusKm || !keyword) {
       return NextResponse.json(
@@ -53,6 +53,11 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    // エリア境界（メートル）
+    const area1Boundary = radius1 || 500;
+    const area2Boundary = radius2 || 1000;
+    const area3Boundary = radius3 || 2000;
 
     const radiusM = radiusKm * 1000;
     let allResults: any[] = [];
@@ -94,6 +99,17 @@ export async function POST(request: NextRequest) {
       const placeLng = place.geometry.location.lng;
       const distance = calculateDistance(lat, lng, placeLat, placeLng);
 
+      // エリア分類を決定
+      let area: 1 | 2 | 3 = 3;
+      if (distance <= area1Boundary) {
+        area = 1;
+      } else if (distance <= area2Boundary) {
+        area = 2;
+      }
+
+      // Google MapsのURLを生成
+      const url = `https://www.google.com/maps/place/?q=place_id:${place.place_id}`;
+
       return {
         name: place.name || 'N/A',
         place_id: place.place_id,
@@ -107,15 +123,32 @@ export async function POST(request: NextRequest) {
           },
         },
         distance,
+        url,
+        area,
       };
     });
 
+    // 3次エリア内の施設のみをフィルタリング
+    const filteredResults = processedResults.filter(
+      (place) => (place.distance || 0) <= area3Boundary
+    );
+
     // 距離でソート
-    processedResults.sort((a, b) => (a.distance || 0) - (b.distance || 0));
+    filteredResults.sort((a, b) => (a.distance || 0) - (b.distance || 0));
+
+    console.log(`Places API: Total ${filteredResults.length} places found`);
+    console.log(`  - 1次エリア(${area1Boundary}m以内): ${filteredResults.filter(p => p.area === 1).length}件`);
+    console.log(`  - 2次エリア(${area2Boundary}m以内): ${filteredResults.filter(p => p.area === 2).length}件`);
+    console.log(`  - 3次エリア(${area3Boundary}m以内): ${filteredResults.filter(p => p.area === 3).length}件`);
 
     return NextResponse.json({
-      results: processedResults,
-      count: processedResults.length,
+      results: filteredResults,
+      count: filteredResults.length,
+      byArea: {
+        area1: filteredResults.filter(p => p.area === 1).length,
+        area2: filteredResults.filter(p => p.area === 2).length,
+        area3: filteredResults.filter(p => p.area === 3).length,
+      },
     });
   } catch (error) {
     console.error('Places API error:', error);

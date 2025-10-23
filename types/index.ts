@@ -22,6 +22,9 @@ export interface PlaceResult {
     location: Coordinates;
   };
   distance?: number; // メートル単位の距離（計算後に追加）
+  url?: string; // 施設のURL（Google Maps URL）
+  website?: string; // 公式ウェブサイト
+  area?: 1 | 2 | 3; // エリア分類（1次/2次/3次）
 }
 
 // jSTAT MAP APIのレスポンス型
