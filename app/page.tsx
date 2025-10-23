@@ -3,18 +3,19 @@
 import { useState, useCallback } from 'react';
 import AnalysisForm from '@/components/AnalysisForm';
 import ResultsDisplay from '@/components/ResultsDisplay';
-import { AnalysisResult } from '@/types';
+import { AnalysisResult, DualAnalysisResult } from '@/types';
 import { mockAnalysisResult, isDevelopmentMode } from '@/lib/mockData';
 
 export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [dualResult, setDualResult] = useState<DualAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [analysisParams, setAnalysisParams] = useState<{
     category: string;
-    rangeType: 'circle' | 'driveTime';
+    rangeType: 'circle' | 'driveTime' | 'both';
     radius1?: number;
     radius2?: number;
     radius3?: number;
@@ -33,7 +34,7 @@ export default function Home() {
   const handleAnalysis = async (data: {
     address: string;
     category: string;
-    rangeType: 'circle' | 'driveTime';
+    rangeType: 'circle' | 'driveTime' | 'both';
     radius1?: number;
     radius2?: number;
     radius3?: number;
@@ -46,6 +47,7 @@ export default function Home() {
     setIsLoading(true);
     setError(null);
     setResult(null);
+    setDualResult(null);
     setAnalysisParams({
       category: data.category,
       rangeType: data.rangeType,
@@ -86,79 +88,193 @@ export default function Home() {
 
       const geocodingData = await geocodingResponse.json();
 
-      // 2. 人口統計データと競合施設を並行して取得
-      const statsPayload: any = {
-        lat: geocodingData.lat,
-        lng: geocodingData.lng,
-        rangeType: data.rangeType,
-      };
-
-      // 範囲タイプに応じてパラメータを追加
-      if (data.rangeType === 'circle') {
-        statsPayload.radius1 = data.radius1;
-        statsPayload.radius2 = data.radius2;
-        statsPayload.radius3 = data.radius3;
-      } else {
-        statsPayload.time1 = data.time1;
-        statsPayload.time2 = data.time2;
-        statsPayload.time3 = data.time3;
-        statsPayload.speed = data.speed;
-        statsPayload.travelMode = data.travelMode;
-      }
-
-      const [statsResponse, placesResponse] = await Promise.all([
-        fetch('/api/stats', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(statsPayload),
-        }),
-        fetch('/api/places', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            lat: geocodingData.lat,
-            lng: geocodingData.lng,
-            // Places APIは円形検索のみなので、最大の範囲（3次エリア）を使用
-            radiusKm:
-              data.rangeType === 'circle'
-                ? Math.max((data.radius1 || 0) / 1000, (data.radius2 || 0) / 1000, (data.radius3 || 0) / 1000)
-                : Math.max(
-                    ((data.time1 || 0) * (data.speed || 30)) / 60,
-                    ((data.time2 || 0) * (data.speed || 30)) / 60,
-                    ((data.time3 || 0) * (data.speed || 30)) / 60
-                  ),
-            keyword: data.category,
-            // エリア境界を渡す
-            radius1: data.rangeType === 'circle' ? data.radius1 : (data.time1 || 5) * (data.speed || 30) * 1000 / 60,
-            radius2: data.rangeType === 'circle' ? data.radius2 : (data.time2 || 10) * (data.speed || 30) * 1000 / 60,
-            radius3: data.rangeType === 'circle' ? data.radius3 : (data.time3 || 20) * (data.speed || 30) * 1000 / 60,
-          }),
-        }),
-      ]);
-
-      if (!statsResponse.ok) {
-        const errorData = await statsResponse.json();
-        throw new Error(errorData.error || '人口統計データの取得に失敗しました');
-      }
-
-      if (!placesResponse.ok) {
-        const errorData = await placesResponse.json();
-        throw new Error(errorData.error || '施設情報の取得に失敗しました');
-      }
-
-      const statsData = await statsResponse.json();
-      const placesData = await placesResponse.json();
-
-      // 結果を設定
-      setResult({
-        address: geocodingData.formatted_address,
-        coordinates: {
+      // 「両方」モードの場合、2回分析を実行
+      if (data.rangeType === 'both') {
+        // 円形範囲での分析
+        const circleStatsPayload = {
           lat: geocodingData.lat,
           lng: geocodingData.lng,
-        },
-        population: statsData,
-        competitors: placesData.results,
-      });
+          rangeType: 'circle' as const,
+          radius1: data.radius1,
+          radius2: data.radius2,
+          radius3: data.radius3,
+        };
+
+        const circlePlacesPayload = {
+          lat: geocodingData.lat,
+          lng: geocodingData.lng,
+          radiusKm: Math.max((data.radius1 || 0) / 1000, (data.radius2 || 0) / 1000, (data.radius3 || 0) / 1000),
+          keyword: data.category,
+          radius1: data.radius1,
+          radius2: data.radius2,
+          radius3: data.radius3,
+        };
+
+        // 到達圏での分析
+        const driveTimeStatsPayload = {
+          lat: geocodingData.lat,
+          lng: geocodingData.lng,
+          rangeType: 'driveTime' as const,
+          time1: data.time1,
+          time2: data.time2,
+          time3: data.time3,
+          speed: data.speed,
+          travelMode: data.travelMode,
+        };
+
+        const driveTimePlacesPayload = {
+          lat: geocodingData.lat,
+          lng: geocodingData.lng,
+          radiusKm: Math.max(
+            ((data.time1 || 0) * (data.speed || 30)) / 60,
+            ((data.time2 || 0) * (data.speed || 30)) / 60,
+            ((data.time3 || 0) * (data.speed || 30)) / 60
+          ),
+          keyword: data.category,
+          radius1: (data.time1 || 5) * (data.speed || 30) * 1000 / 60,
+          radius2: (data.time2 || 10) * (data.speed || 30) * 1000 / 60,
+          radius3: (data.time3 || 20) * (data.speed || 30) * 1000 / 60,
+        };
+
+        // 4つのAPIを並行して呼び出し
+        const [circleStatsRes, circlePlacesRes, driveTimeStatsRes, driveTimePlacesRes] = await Promise.all([
+          fetch('/api/stats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(circleStatsPayload),
+          }),
+          fetch('/api/places', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(circlePlacesPayload),
+          }),
+          fetch('/api/stats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(driveTimeStatsPayload),
+          }),
+          fetch('/api/places', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(driveTimePlacesPayload),
+          }),
+        ]);
+
+        if (!circleStatsRes.ok || !circlePlacesRes.ok || !driveTimeStatsRes.ok || !driveTimePlacesRes.ok) {
+          throw new Error('データの取得に失敗しました');
+        }
+
+        const [circleStats, circlePlaces, driveTimeStats, driveTimePlaces] = await Promise.all([
+          circleStatsRes.json(),
+          circlePlacesRes.json(),
+          driveTimeStatsRes.json(),
+          driveTimePlacesRes.json(),
+        ]);
+
+        // 両方の結果を設定
+        setDualResult({
+          address: geocodingData.formatted_address,
+          coordinates: {
+            lat: geocodingData.lat,
+            lng: geocodingData.lng,
+          },
+          circle: {
+            population: circleStats,
+            competitors: circlePlaces.results,
+            params: {
+              radius1: data.radius1 || 500,
+              radius2: data.radius2 || 1000,
+              radius3: data.radius3 || 2000,
+            },
+          },
+          driveTime: {
+            population: driveTimeStats,
+            competitors: driveTimePlaces.results,
+            params: {
+              time1: data.time1 || 5,
+              time2: data.time2 || 10,
+              time3: data.time3 || 20,
+              speed: data.speed || 30,
+              travelMode: data.travelMode || 'car',
+            },
+          },
+        });
+      } else {
+        // 通常モード（circle または driveTime）
+        // 2. 人口統計データと競合施設を並行して取得
+        const statsPayload: any = {
+          lat: geocodingData.lat,
+          lng: geocodingData.lng,
+          rangeType: data.rangeType,
+        };
+
+        // 範囲タイプに応じてパラメータを追加
+        if (data.rangeType === 'circle') {
+          statsPayload.radius1 = data.radius1;
+          statsPayload.radius2 = data.radius2;
+          statsPayload.radius3 = data.radius3;
+        } else {
+          statsPayload.time1 = data.time1;
+          statsPayload.time2 = data.time2;
+          statsPayload.time3 = data.time3;
+          statsPayload.speed = data.speed;
+          statsPayload.travelMode = data.travelMode;
+        }
+
+        const [statsResponse, placesResponse] = await Promise.all([
+          fetch('/api/stats', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(statsPayload),
+          }),
+          fetch('/api/places', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lat: geocodingData.lat,
+              lng: geocodingData.lng,
+              // Places APIは円形検索のみなので、最大の範囲（3次エリア）を使用
+              radiusKm:
+                data.rangeType === 'circle'
+                  ? Math.max((data.radius1 || 0) / 1000, (data.radius2 || 0) / 1000, (data.radius3 || 0) / 1000)
+                  : Math.max(
+                      ((data.time1 || 0) * (data.speed || 30)) / 60,
+                      ((data.time2 || 0) * (data.speed || 30)) / 60,
+                      ((data.time3 || 0) * (data.speed || 30)) / 60
+                    ),
+              keyword: data.category,
+              // エリア境界を渡す
+              radius1: data.rangeType === 'circle' ? data.radius1 : (data.time1 || 5) * (data.speed || 30) * 1000 / 60,
+              radius2: data.rangeType === 'circle' ? data.radius2 : (data.time2 || 10) * (data.speed || 30) * 1000 / 60,
+              radius3: data.rangeType === 'circle' ? data.radius3 : (data.time3 || 20) * (data.speed || 30) * 1000 / 60,
+            }),
+          }),
+        ]);
+
+        if (!statsResponse.ok) {
+          const errorData = await statsResponse.json();
+          throw new Error(errorData.error || '人口統計データの取得に失敗しました');
+        }
+
+        if (!placesResponse.ok) {
+          const errorData = await placesResponse.json();
+          throw new Error(errorData.error || '施設情報の取得に失敗しました');
+        }
+
+        const statsData = await statsResponse.json();
+        const placesData = await placesResponse.json();
+
+        // 結果を設定
+        setResult({
+          address: geocodingData.formatted_address,
+          coordinates: {
+            lat: geocodingData.lat,
+            lng: geocodingData.lng,
+          },
+          population: statsData,
+          competitors: placesData.results,
+        });
+      }
       showToast('分析が完了しました', 'success');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '分析中にエラーが発生しました';
@@ -369,10 +485,11 @@ export default function Home() {
             )}
 
             {/* Results */}
-            {result && !isLoading && analysisParams && (
+            {(result || dualResult) && !isLoading && analysisParams && (
               <div className="animate-fade-in">
                 <ResultsDisplay
                   result={result}
+                  dualResult={dualResult}
                   onExportToSheets={handleExportToSheets}
                   isExporting={isExporting}
                   category={analysisParams.category}
@@ -383,7 +500,7 @@ export default function Home() {
             )}
 
             {/* Empty State */}
-            {!result && !isLoading && !error && (
+            {!result && !dualResult && !isLoading && !error && (
               <div className="card text-center">
                 <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-100 rounded-full mb-6">
                   <svg className="w-8 h-8 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">

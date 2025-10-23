@@ -4,19 +4,25 @@ import ExcelJS from 'exceljs';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { basicInfo, population, competitors, rawData } = body;
+    const { basicInfo, population, competitors, rawData, circle, driveTime } = body;
 
     console.log('richreport API called');
-    console.log('rawData exists:', !!rawData);
-    console.log('rawData.GET_SUMMARY exists:', !!rawData?.GET_SUMMARY);
+    console.log('rangeType:', basicInfo.rangeType);
+    console.log('circle exists:', !!circle);
+    console.log('driveTime exists:', !!driveTime);
 
     // Excelワークブックを作成
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Market Analysis App';
     workbook.created = new Date();
 
+    // 両方モードの場合
+    if (basicInfo.rangeType === 'both' && circle && driveTime) {
+      console.log('Creating dual report (both circle and driveTime)...');
+      await createDualReport(workbook, basicInfo, circle, driveTime);
+    }
     // rawDataがある場合は、jSTAT MAP APIの完全なデータを使用
-    if (rawData?.GET_SUMMARY) {
+    else if (rawData?.GET_SUMMARY) {
       console.log('Creating enhanced report...');
       await createEnhancedReport(workbook, basicInfo, rawData, competitors);
     } else {
@@ -51,13 +57,102 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * 両方モード用のレポート作成
+ */
+async function createDualReport(
+  workbook: ExcelJS.Workbook,
+  basicInfo: any,
+  circle: any,
+  driveTime: any
+) {
+  // サマリーシート
+  const summarySheet = workbook.addWorksheet('サマリー');
+
+  const summaryData = [
+    ['商圏分析レポート（両方モード）'],
+    [],
+    ['検索住所', basicInfo.address],
+    ['緯度', basicInfo.latitude],
+    ['経度', basicInfo.longitude],
+    ['施設カテゴリ', basicInfo.category],
+    [],
+    ['■ 円形範囲設定'],
+    ['1次エリア', `${circle.rangeParams.radius1}m`],
+    ['2次エリア', `${circle.rangeParams.radius2}m`],
+    ['3次エリア', `${circle.rangeParams.radius3}m`],
+    [],
+    ['■ 到達圏設定'],
+    ['1次エリア', `${driveTime.rangeParams.time1}分`],
+    ['2次エリア', `${driveTime.rangeParams.time2}分`],
+    ['3次エリア', `${driveTime.rangeParams.time3}分`],
+    ['平均時速', `${driveTime.rangeParams.speed}km/h`],
+    ['移動手段', driveTime.rangeParams.travelMode === 'car' ? '車' : '徒歩'],
+    [],
+    ['■ データ概要'],
+    ['', '円形範囲', '到達圏'],
+    ['総人口', circle.population.totalPopulation, driveTime.population.totalPopulation],
+    ['競合施設数', circle.competitors.length, driveTime.competitors.length],
+  ];
+
+  summaryData.forEach((row, index) => {
+    summarySheet.addRow(row);
+    if (index === 0) {
+      summarySheet.getRow(index + 1).font = { size: 16, bold: true };
+    } else if ([7, 12, 19].includes(index)) {
+      summarySheet.getRow(index + 1).font = { bold: true, size: 12 };
+    }
+  });
+
+  summarySheet.columns = [
+    { width: 20 },
+    { width: 20 },
+    { width: 20 }
+  ];
+
+  // 円形範囲のデータ
+  if (circle.rawData?.GET_SUMMARY) {
+    await createEnhancedReport(workbook,
+      { ...basicInfo, rangeParams: circle.rangeParams, rangeDescription: circle.rangeDescription },
+      circle.rawData,
+      circle.competitors,
+      '円形_'
+    );
+  } else {
+    await createBasicReport(workbook,
+      { ...basicInfo, radius: circle.rangeParams.radius3 / 1000 },
+      circle.population,
+      circle.competitors,
+      '円形_'
+    );
+  }
+
+  // 到達圏のデータ
+  if (driveTime.rawData?.GET_SUMMARY) {
+    await createEnhancedReport(workbook,
+      { ...basicInfo, rangeParams: driveTime.rangeParams, rangeDescription: driveTime.rangeDescription },
+      driveTime.rawData,
+      driveTime.competitors,
+      '到達圏_'
+    );
+  } else {
+    await createBasicReport(workbook,
+      { ...basicInfo, radius: (driveTime.rangeParams.time3 * driveTime.rangeParams.speed) / 60 },
+      driveTime.population,
+      driveTime.competitors,
+      '到達圏_'
+    );
+  }
+}
+
+/**
  * jSTAT MAP APIの完全なデータを使用した充実したレポート
  */
 async function createEnhancedReport(
   workbook: ExcelJS.Workbook,
   basicInfo: any,
   rawData: any,
-  competitors: any[]
+  competitors: any[],
+  sheetPrefix: string = ''
 ) {
   const params = rawData.GET_SUMMARY.PARAMETER;
   const rangeType = params.RANGE_TYPE;
@@ -112,7 +207,7 @@ async function createEnhancedReport(
   console.log('areaConfigs =', areaConfigs);
 
   // 1. サマリーシート
-  const summarySheet = workbook.addWorksheet('サマリー');
+  const summarySheet = workbook.addWorksheet(sheetPrefix ? `${sheetPrefix}サマリー` : 'サマリー');
 
   let rangeDisplay: string;
   if (rangeType === 'driveTime') {
@@ -174,7 +269,7 @@ async function createEnhancedReport(
   ];
 
   // 2. 基本情報シート
-  const basicSheet = workbook.addWorksheet('基本情報');
+  const basicSheet = workbook.addWorksheet(sheetPrefix ? `${sheetPrefix}基本情報` : '基本情報');
 
   let rangeInfo: [string, string];
   if (rangeType === 'driveTime') {
@@ -213,20 +308,22 @@ async function createEnhancedReport(
   basicSheet.columns = [{ width: 20 }, { width: 50 }];
 
   // 3. 主要データシート
-  await createMainDataSheet(workbook, rawData, areaConfigs, noteText);
+  await createMainDataSheet(workbook, rawData, areaConfigs, noteText, sheetPrefix);
 
   // 4. 競合施設シート
   if (competitors && competitors.length > 0) {
-    await createCompetitorsSheet(workbook, competitors);
+    await createCompetitorsSheet(workbook, competitors, sheetPrefix);
   }
 
-  // 5. 各テーブルの詳細シート
-  tables.forEach((table: any, index: number) => {
-    const tableNum = index + 1;
-    const sheetName = `T${tableNum.toString().padStart(2, '0')}_${table.TITLE.substring(0, 20)}`.replace(/[:\\\/\[\]\*\?]/g, '');
+  // 5. 各テーブルの詳細シート（両方モードの場合はスキップして重複を避ける）
+  if (!sheetPrefix) {
+    tables.forEach((table: any, index: number) => {
+      const tableNum = index + 1;
+      const sheetName = `T${tableNum.toString().padStart(2, '0')}_${table.TITLE.substring(0, 20)}`.replace(/[:\\\/\[\]\*\?]/g, '');
 
-    createTableSheet(workbook, table, sheetName);
-  });
+      createTableSheet(workbook, table, sheetName);
+    });
+  }
 }
 
 /**
@@ -236,9 +333,10 @@ async function createMainDataSheet(
   workbook: ExcelJS.Workbook,
   rawData: any,
   areaConfigs: Array<{ code: string; name: string }>,
-  noteText: string
+  noteText: string,
+  sheetPrefix: string = ''
 ) {
-  const mainSheet = workbook.addWorksheet('主要データ');
+  const mainSheet = workbook.addWorksheet(sheetPrefix ? `${sheetPrefix}主要データ` : '主要データ');
 
   const tables = rawData.GET_SUMMARY.DATASET_INF[0].TABLE_INF;
 
@@ -453,8 +551,8 @@ async function createMainDataSheet(
 /**
  * 競合施設シートの作成
  */
-async function createCompetitorsSheet(workbook: ExcelJS.Workbook, competitors: any[]) {
-  const competitorsSheet = workbook.addWorksheet('競合施設');
+async function createCompetitorsSheet(workbook: ExcelJS.Workbook, competitors: any[], sheetPrefix: string = '') {
+  const competitorsSheet = workbook.addWorksheet(sheetPrefix ? `${sheetPrefix}競合施設` : '競合施設');
 
   // ヘッダー
   const headerRow = competitorsSheet.addRow([
@@ -599,15 +697,16 @@ async function createBasicReport(
   workbook: ExcelJS.Workbook,
   basicInfo: any,
   population: any,
-  competitors: any[]
+  competitors: any[],
+  sheetPrefix: string = ''
 ) {
   // 基本分析シート
-  const basicSheet = workbook.addWorksheet('基本分析');
+  const basicSheet = workbook.addWorksheet(sheetPrefix ? `${sheetPrefix}基本分析` : '基本分析');
   basicSheet.getCell('C2').value = `調査地点　${basicInfo.address}　エリア範囲　半径${basicInfo.radius}km`;
   basicSheet.getCell('C2').font = { bold: true };
 
   // 年齢別人口シート
-  const ageSheet = workbook.addWorksheet('年齢別人口');
+  const ageSheet = workbook.addWorksheet(sheetPrefix ? `${sheetPrefix}年齢別人口` : '年齢別人口');
 
   // ヘッダー行
   ageSheet.getCell('C2').value = 'データ名';
@@ -697,7 +796,7 @@ async function createBasicReport(
 
   // 経済センサスシート
   if (population.industries) {
-    const economicSheet = workbook.addWorksheet('経済センサス');
+    const economicSheet = workbook.addWorksheet(sheetPrefix ? `${sheetPrefix}経済センサス` : '経済センサス');
     const industriesArray = Object.entries(population.industries).map(([name, data]: [string, any]) => ({
       name,
       ...data
@@ -769,6 +868,6 @@ async function createBasicReport(
 
   // 競合施設シート
   if (competitors && competitors.length > 0) {
-    await createCompetitorsSheet(workbook, competitors);
+    await createCompetitorsSheet(workbook, competitors, sheetPrefix);
   }
 }

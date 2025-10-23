@@ -1,15 +1,16 @@
 'use client';
 
-import { AnalysisResult } from '@/types';
+import { AnalysisResult, DualAnalysisResult } from '@/types';
 import { exportToCSV } from '@/lib/csvExport';
 import { memo, useState, useMemo } from 'react';
 
 interface ResultsDisplayProps {
-  result: AnalysisResult;
+  result: AnalysisResult | null;
+  dualResult?: DualAnalysisResult | null;
   onExportToSheets: () => void;
   isExporting: boolean;
   category?: string;
-  rangeType: 'circle' | 'driveTime';
+  rangeType: 'circle' | 'driveTime' | 'both';
   rangeParams: {
     radius1?: number;
     radius2?: number;
@@ -112,6 +113,7 @@ PieChart.displayName = 'PieChart';
 
 const ResultsDisplay = ({
   result,
+  dualResult,
   onExportToSheets,
   isExporting,
   category = '施設',
@@ -119,9 +121,36 @@ const ResultsDisplay = ({
   rangeParams,
 }: ResultsDisplayProps) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'demographics' | 'competitors'>('overview');
+  const [selectedRange, setSelectedRange] = useState<'circle' | 'driveTime'>('circle');
+
+  // 両方モードの場合、dualResultを使用、それ以外は result を使用
+  const currentResult = dualResult
+    ? (selectedRange === 'circle' ? {
+        address: dualResult.address,
+        coordinates: dualResult.coordinates,
+        population: dualResult.circle.population,
+        competitors: dualResult.circle.competitors,
+      } : {
+        address: dualResult.address,
+        coordinates: dualResult.coordinates,
+        population: dualResult.driveTime.population,
+        competitors: dualResult.driveTime.competitors,
+      })
+    : result;
+
+  if (!currentResult) return null;
   // 範囲の説明を生成
   const getRangeDescription = () => {
-    if (rangeType === 'circle') {
+    if (rangeType === 'both') {
+      if (dualResult) {
+        if (selectedRange === 'circle') {
+          return `円形: ${dualResult.circle.params.radius1}m / ${dualResult.circle.params.radius2}m / ${dualResult.circle.params.radius3}m`;
+        } else {
+          return `到達圏: ${dualResult.driveTime.params.time1}分 / ${dualResult.driveTime.params.time2}分 / ${dualResult.driveTime.params.time3}分 (${dualResult.driveTime.params.speed}km/h)`;
+        }
+      }
+      return '';
+    } else if (rangeType === 'circle') {
       return `円形: ${rangeParams.radius1}m / ${rangeParams.radius2}m / ${rangeParams.radius3}m`;
     } else {
       return `到達圏: ${rangeParams.time1}分 / ${rangeParams.time2}分 / ${rangeParams.time3}分 (${rangeParams.speed}km/h)`;
@@ -131,15 +160,15 @@ const ResultsDisplay = ({
   const handleCSVExport = () => {
     const exportData = {
       basicInfo: {
-        address: result.address,
-        latitude: result.coordinates.lat,
-        longitude: result.coordinates.lng,
+        address: currentResult.address,
+        latitude: currentResult.coordinates.lat,
+        longitude: currentResult.coordinates.lng,
         category,
-        rangeType,
+        rangeType: rangeType === 'both' ? selectedRange : rangeType,
         rangeDescription: getRangeDescription(),
       },
-      population: result.population,
-      competitors: result.competitors.map((c) => ({
+      population: currentResult.population,
+      competitors: currentResult.competitors.map((c) => ({
         name: c.name,
         address: c.vicinity || '',
         distance: c.distance || 0,
@@ -154,18 +183,56 @@ const ResultsDisplay = ({
 
   const handleRichReportExport = async () => {
     try {
-      const exportData = {
+      const exportData: any = {
         basicInfo: {
-          address: result.address,
-          latitude: result.coordinates.lat,
-          longitude: result.coordinates.lng,
+          address: currentResult.address,
+          latitude: currentResult.coordinates.lat,
+          longitude: currentResult.coordinates.lng,
           category,
           rangeType,
-          rangeDescription: getRangeDescription(),
-          rangeParams, // 範囲パラメータ（radius1/2/3 or time1/2/3）を追加
         },
-        population: result.population,
-        competitors: result.competitors.map((c) => ({
+      };
+
+      // 両方モードの場合、両方のデータを送信
+      if (rangeType === 'both' && dualResult) {
+        exportData.circle = {
+          rangeDescription: `円形: ${dualResult.circle.params.radius1}m / ${dualResult.circle.params.radius2}m / ${dualResult.circle.params.radius3}m`,
+          rangeParams: dualResult.circle.params,
+          population: dualResult.circle.population,
+          competitors: dualResult.circle.competitors.map((c) => ({
+            name: c.name,
+            address: c.vicinity || '',
+            distance: c.distance || 0,
+            rating: c.rating,
+            userRatingsTotal: c.user_ratings_total,
+            placeId: c.place_id,
+            url: c.url,
+            area: c.area,
+          })),
+          rawData: dualResult.circle.population.rawData,
+        };
+        exportData.driveTime = {
+          rangeDescription: `到達圏: ${dualResult.driveTime.params.time1}分 / ${dualResult.driveTime.params.time2}分 / ${dualResult.driveTime.params.time3}分 (${dualResult.driveTime.params.speed}km/h)`,
+          rangeParams: dualResult.driveTime.params,
+          population: dualResult.driveTime.population,
+          competitors: dualResult.driveTime.competitors.map((c) => ({
+            name: c.name,
+            address: c.vicinity || '',
+            distance: c.distance || 0,
+            rating: c.rating,
+            userRatingsTotal: c.user_ratings_total,
+            placeId: c.place_id,
+            url: c.url,
+            area: c.area,
+          })),
+          rawData: dualResult.driveTime.population.rawData,
+        };
+      } else {
+        // 通常モード
+        exportData.rangeDescription = getRangeDescription();
+        exportData.rangeParams = rangeParams;
+        exportData.population = currentResult.population;
+        exportData.competitors = currentResult.competitors.map((c) => ({
           name: c.name,
           address: c.vicinity || '',
           distance: c.distance || 0,
@@ -174,9 +241,9 @@ const ResultsDisplay = ({
           placeId: c.place_id,
           url: c.url,
           area: c.area,
-        })),
-        rawData: result.population.rawData, // jSTAT MAP APIの生データを含める
-      };
+        }));
+        exportData.rawData = currentResult.population.rawData;
+      }
 
       const response = await fetch('/api/export/richreport', {
         method: 'POST',
@@ -206,17 +273,17 @@ const ResultsDisplay = ({
 
   // Prepare chart data
   const ageChartData = useMemo(() => {
-    if (!result.population.ageGroups) return [];
-    return Object.entries(result.population.ageGroups).map(([age, counts]) => ({
+    if (!currentResult.population.ageGroups) return [];
+    return Object.entries(currentResult.population.ageGroups).map(([age, counts]) => ({
       label: age,
       value: counts.total,
       color: `hsl(${Math.random() * 360}, 70%, 50%)`
     }));
-  }, [result.population.ageGroups]);
+  }, [currentResult.population.ageGroups]);
 
   const genderChartData = useMemo(() => {
-    if (!result.population.ageGroups) return [];
-    const totals = Object.values(result.population.ageGroups).reduce(
+    if (!currentResult.population.ageGroups) return [];
+    const totals = Object.values(currentResult.population.ageGroups).reduce(
       (acc, counts) => ({
         male: acc.male + counts.male,
         female: acc.female + counts.female,
@@ -227,16 +294,52 @@ const ResultsDisplay = ({
       { label: '男性', value: totals.male, color: '#3B82F6' },
       { label: '女性', value: totals.female, color: '#EC4899' },
     ];
-  }, [result.population.ageGroups]);
+  }, [currentResult.population.ageGroups]);
 
   const competitorsByArea = useMemo(() => [
-    { label: '1次エリア', value: result.competitors.filter(p => p.area === 1).length, color: '#3B82F6' },
-    { label: '2次エリア', value: result.competitors.filter(p => p.area === 2).length, color: '#10B981' },
-    { label: '3次エリア', value: result.competitors.filter(p => p.area === 3).length, color: '#F59E0B' },
-  ], [result.competitors]);
+    { label: '1次エリア', value: currentResult.competitors.filter(p => p.area === 1).length, color: '#3B82F6' },
+    { label: '2次エリア', value: currentResult.competitors.filter(p => p.area === 2).length, color: '#10B981' },
+    { label: '3次エリア', value: currentResult.competitors.filter(p => p.area === 3).length, color: '#F59E0B' },
+  ], [currentResult.competitors]);
 
   return (
     <div className="space-y-6">
+      {/* 両方モードの切り替えUI */}
+      {rangeType === 'both' && dualResult && (
+        <div className="bg-white p-4 rounded-lg shadow-md border-2 border-purple-200">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-purple-800">表示範囲の切り替え</h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSelectedRange('circle')}
+                className={`px-6 py-2 rounded-lg font-semibold transition-all duration-200 ${
+                  selectedRange === 'circle'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                円形範囲
+              </button>
+              <button
+                onClick={() => setSelectedRange('driveTime')}
+                className={`px-6 py-2 rounded-lg font-semibold transition-all duration-200 ${
+                  selectedRange === 'driveTime'
+                    ? 'bg-green-600 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                到達圏
+              </button>
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 mt-2">
+            {selectedRange === 'circle'
+              ? `円形: ${dualResult.circle.params.radius1}m / ${dualResult.circle.params.radius2}m / ${dualResult.circle.params.radius3}m`
+              : `到達圏: ${dualResult.driveTime.params.time1}分 / ${dualResult.driveTime.params.time2}分 / ${dualResult.driveTime.params.time3}分 (${dualResult.driveTime.params.speed}km/h, ${dualResult.driveTime.params.travelMode === 'car' ? '車' : '徒歩'})`}
+          </p>
+        </div>
+      )}
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Total Population Card */}
@@ -244,7 +347,7 @@ const ResultsDisplay = ({
           <div className="flex items-center justify-between">
             <div>
               <p className="text-primary-100 text-sm font-medium mb-1">総人口</p>
-              <p className="text-4xl font-bold">{result.population.totalPopulation.toLocaleString()}</p>
+              <p className="text-4xl font-bold">{currentResult.population.totalPopulation.toLocaleString()}</p>
               <p className="text-primary-100 text-xs mt-1">人</p>
             </div>
             <div className="bg-white/20 p-3 rounded-lg">
@@ -260,7 +363,7 @@ const ResultsDisplay = ({
           <div className="flex items-center justify-between">
             <div>
               <p className="text-success-100 text-sm font-medium mb-1">競合施設</p>
-              <p className="text-4xl font-bold">{result.competitors.length}</p>
+              <p className="text-4xl font-bold">{currentResult.competitors.length}</p>
               <p className="text-success-100 text-xs mt-1">件</p>
             </div>
             <div className="bg-white/20 p-3 rounded-lg">
@@ -365,12 +468,12 @@ const ResultsDisplay = ({
                 <dl className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <dt className="text-sm font-semibold text-gray-600 mb-1">住所</dt>
-                    <dd className="text-base text-gray-900">{result.address}</dd>
+                    <dd className="text-base text-gray-900">{currentResult.address}</dd>
                   </div>
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <dt className="text-sm font-semibold text-gray-600 mb-1">座標</dt>
                     <dd className="text-base text-gray-900 font-mono">
-                      {result.coordinates.lat.toFixed(6)}, {result.coordinates.lng.toFixed(6)}
+                      {currentResult.coordinates.lat.toFixed(6)}, {currentResult.coordinates.lng.toFixed(6)}
                     </dd>
                   </div>
                 </dl>
@@ -401,7 +504,7 @@ const ResultsDisplay = ({
                 {genderChartData.length > 0 && <PieChart data={genderChartData} />}
               </div>
 
-              {result.population.ageGroups && (
+              {currentResult.population.ageGroups && (
                 <div className="bg-white p-6 rounded-xl border border-gray-100">
                   <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
                     <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -428,7 +531,7 @@ const ResultsDisplay = ({
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {Object.entries(result.population.ageGroups).map(([age, counts], index) => (
+                        {Object.entries(currentResult.population.ageGroups).map(([age, counts], index) => (
                           <tr key={age} className={`hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{age}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-semibold">
@@ -454,7 +557,7 @@ const ResultsDisplay = ({
           {activeTab === 'competitors' && (
             <div id="competitors-panel" role="tabpanel" aria-labelledby="competitors-tab" className="space-y-6 animate-fade-in">
               {[1, 2, 3].map((areaNum) => {
-                const areaPlaces = result.competitors.filter(p => p.area === areaNum);
+                const areaPlaces = currentResult.competitors.filter(p => p.area === areaNum);
                 if (areaPlaces.length === 0) return null;
 
                 const areaColors = {
