@@ -329,7 +329,7 @@ export const isDevelopmentMode = true;
 - スクリーンリーダー対応
 - 明確なフォーカス表示
 
-詳細は [DESIGN.md](./DESIGN.md) を参照してください。
+詳細は [DESIGN.md](./docs/DESIGN.md) を参照してください。
 
 ---
 
@@ -341,6 +341,7 @@ syoken/
 │   ├── page.tsx                  # メインページ
 │   ├── globals.css               # グローバルスタイル（デザイントークン）
 │   ├── layout.tsx                # レイアウトコンポーネント
+│   ├── design-system/            # デザインシステム参照ページ
 │   └── api/                      # API Routes
 │       ├── geocoding/            # Geocoding API
 │       │   └── route.ts
@@ -355,21 +356,31 @@ syoken/
 │               └── route.ts
 ├── components/                   # Reactコンポーネント
 │   ├── AnalysisForm.tsx         # 分析フォーム
-│   └── ResultsDisplay.tsx       # 結果表示
+│   ├── ResultsDisplay.tsx       # 結果表示
+│   └── ui/                      # UIコンポーネント
 ├── lib/                          # ユーティリティ
 │   ├── csvExport.ts             # CSV生成
 │   ├── mockData.ts              # モックデータ
-│   └── sheetsExport.ts          # Sheets連携
+│   ├── sheetsExport.ts          # Sheets連携
+│   └── designTokens.ts          # デザイントークン定義
 ├── types/                        # TypeScript型定義
 │   └── index.ts
+├── docs/                         # ドキュメント（Git管理）
+│   ├── DESIGN.md                # デザインシステムガイド
+│   ├── DESIGN_SYSTEM*.md        # デザイン詳細ドキュメント
+│   ├── DEVELOPMENT.md           # 開発ガイド
+│   └── QUICKSTART_DEV_MODE.md   # クイックスタート
+├── dev-data/                     # 開発用データ（Git管理外）
+│   ├── jstat-sample-*.json      # jSTAT MAP サンプルレスポンス
+│   └── *.xlsx                   # テスト用エクスポートファイル
+├── sample/                       # サンプルスクリプト
+│   └── jstat.js                 # jSTAT MAP API使用例
 ├── public/                       # 静的ファイル
 ├── .env.local.example           # 環境変数のサンプル
 ├── .env.local                   # 環境変数（Git管理外）
 ├── package.json                 # 依存関係
 ├── tsconfig.json                # TypeScript設定
-├── postcss.config.mjs           # PostCSS設定
-├── CLAUDE.md                    # プロジェクト仕様
-├── DESIGN.md                    # デザインシステムガイド
+├── claude.md                    # プロジェクト仕様（Claude Code用）
 └── README.md                    # このファイル
 ```
 

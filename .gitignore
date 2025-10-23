@@ -43,3 +43,10 @@ next-env.d.ts
 # IDE
 .vscode
 .idea
+
+# Development data and scripts
+/dev-data
+/scripts
+
+# Claude Code settings
+/.claude/settings.local.json
