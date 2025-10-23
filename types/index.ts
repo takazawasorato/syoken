@@ -101,6 +101,32 @@ export interface AnalysisResult {
   competitors: PlaceResult[];
 }
 
+// 「両方」モード用の分析結果の型
+export interface DualAnalysisResult {
+  address: string;
+  coordinates: Coordinates;
+  circle: {
+    population: PopulationData;
+    competitors: PlaceResult[];
+    params: {
+      radius1: number;
+      radius2: number;
+      radius3: number;
+    };
+  };
+  driveTime: {
+    population: PopulationData;
+    competitors: PlaceResult[];
+    params: {
+      time1: number;
+      time2: number;
+      time3: number;
+      speed: number;
+      travelMode: string;
+    };
+  };
+}
+
 // CSVエクスポート用のデータ型
 export interface ExportData {
   basicInfo: {
