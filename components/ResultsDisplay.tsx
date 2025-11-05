@@ -257,10 +257,22 @@ const ResultsDisplay = ({
 
       // Excelファイルをダウンロード
       const blob = await response.blob();
+
+      // Content-Dispositionヘッダーからファイル名を取得
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `RichReport_${Date.now()}.xlsx`; // デフォルト
+
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)|filename="(.+)"/);
+        if (filenameMatch) {
+          filename = decodeURIComponent(filenameMatch[1] || filenameMatch[2]);
+        }
+      }
+
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `RichReport_${Date.now()}.xlsx`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -336,6 +348,64 @@ const ResultsDisplay = ({
             {selectedRange === 'circle'
               ? `円形: ${dualResult.circle.params.radius1}m / ${dualResult.circle.params.radius2}m / ${dualResult.circle.params.radius3}m`
               : `到達圏: ${dualResult.driveTime.params.time1}分 / ${dualResult.driveTime.params.time2}分 / ${dualResult.driveTime.params.time3}分 (${dualResult.driveTime.params.speed}km/h, ${dualResult.driveTime.params.travelMode === 'car' ? '車' : '徒歩'})`}
+          </p>
+        </div>
+      )}
+
+      {/* Income Data Card (if available) */}
+      {(result?.incomeData || dualResult?.incomeData) && (
+        <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-6 rounded-xl border-2 border-orange-200 shadow-md">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-orange-500 p-3 rounded-lg">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">市区町村所得データ</h3>
+                <p className="text-sm text-gray-600">
+                  {(result?.incomeData || dualResult?.incomeData)?.prefectureName} {(result?.incomeData || dualResult?.incomeData)?.municipalityName}
+                </p>
+              </div>
+            </div>
+            <span className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-xs font-bold">
+              {(result?.incomeData || dualResult?.incomeData)?.dataYear}年度
+            </span>
+          </div>
+          <dl className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-lg shadow-sm">
+              <dt className="text-xs font-semibold text-gray-600 mb-1">納税義務者数</dt>
+              <dd className="text-2xl font-bold text-gray-900">
+                {(result?.incomeData || dualResult?.incomeData)?.taxpayerCount?.toLocaleString() || 'N/A'}
+                {(result?.incomeData || dualResult?.incomeData)?.taxpayerCount && (
+                  <span className="text-sm font-normal text-gray-600 ml-1">人</span>
+                )}
+              </dd>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow-sm">
+              <dt className="text-xs font-semibold text-gray-600 mb-1">総所得金額</dt>
+              <dd className="text-2xl font-bold text-gray-900">
+                {(result?.incomeData || dualResult?.incomeData)?.totalIncome
+                  ? `${((result?.incomeData || dualResult?.incomeData)?.totalIncome! / 1000000).toFixed(1)}`
+                  : 'N/A'}
+                {(result?.incomeData || dualResult?.incomeData)?.totalIncome && (
+                  <span className="text-sm font-normal text-gray-600 ml-1">億円</span>
+                )}
+              </dd>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow-sm">
+              <dt className="text-xs font-semibold text-gray-600 mb-1">一人当たり所得</dt>
+              <dd className="text-2xl font-bold text-orange-600">
+                {(result?.incomeData || dualResult?.incomeData)?.averageIncome?.toLocaleString() || 'N/A'}
+                {(result?.incomeData || dualResult?.incomeData)?.averageIncome && (
+                  <span className="text-sm font-normal text-gray-600 ml-1">千円</span>
+                )}
+              </dd>
+            </div>
+          </dl>
+          <p className="text-xs text-gray-500 mt-3">
+            ※出典: 総務省「市町村税課税状況等の調」
           </p>
         </div>
       )}

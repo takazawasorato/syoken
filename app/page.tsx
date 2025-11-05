@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import AnalysisForm from '@/components/AnalysisForm';
 import ResultsDisplay from '@/components/ResultsDisplay';
 import { AnalysisResult, DualAnalysisResult } from '@/types';
-import { mockAnalysisResult, isDevelopmentMode } from '@/lib/mockData';
+import { getMockAnalysisResult, getMockDualAnalysisResult, isDevelopmentMode } from '@/lib/mockData';
 
 export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
@@ -68,7 +68,16 @@ export default function Home() {
         showToast('モックデータを使用して分析を実行しています', 'info');
         // UIテスト用に少し遅延を追加
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        setResult(mockAnalysisResult);
+
+        // 範囲タイプに応じて適切なモックデータを設定
+        if (data.rangeType === 'both') {
+          // 両方モードの場合
+          setDualResult(getMockDualAnalysisResult());
+        } else {
+          // 単一モード（circle または driveTime）の場合
+          setResult(getMockAnalysisResult());
+        }
+
         showToast('分析が完了しました', 'success');
         return;
       }
@@ -87,6 +96,22 @@ export default function Home() {
       }
 
       const geocodingData = await geocodingResponse.json();
+
+      // 所得データを取得（エラーは無視して続行）
+      let incomeData = null;
+      try {
+        const incomeResponse = await fetch('/api/income', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ address: data.address }),
+        });
+        if (incomeResponse.ok) {
+          const incomeResult = await incomeResponse.json();
+          incomeData = incomeResult.data;
+        }
+      } catch (error) {
+        console.warn('所得データの取得に失敗しました:', error);
+      }
 
       // 「両方」モードの場合、2回分析を実行
       if (data.rangeType === 'both') {
@@ -178,6 +203,7 @@ export default function Home() {
             lat: geocodingData.lat,
             lng: geocodingData.lng,
           },
+          incomeData: incomeData,
           circle: {
             population: circleStats,
             competitors: circlePlaces.results,
@@ -273,6 +299,7 @@ export default function Home() {
           },
           population: statsData,
           competitors: placesData.results,
+          incomeData: incomeData,
         });
       }
       showToast('分析が完了しました', 'success');

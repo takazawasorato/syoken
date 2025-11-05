@@ -51,9 +51,9 @@ export function exportToCSV(data: ExportData, filename: string = 'analysis_resul
     competitorRows.push([
       competitor.name,
       competitor.address || '',
-      competitor.distance,
-      competitor.rating || '',
-      competitor.userRatingsTotal || '',
+      competitor.distance.toString(),
+      competitor.rating?.toString() || '',
+      competitor.userRatingsTotal?.toString() || '',
       competitor.placeId,
     ]);
   });

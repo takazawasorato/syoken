@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PlaceResult, Coordinates } from '@/types';
+import { captureApiResponseToJson, isCaptureModeEnabled } from '@/utils/captureApiResponse';
 
 /**
  * 2点間の距離を計算（ヒュベニの公式）
@@ -140,6 +141,30 @@ export async function POST(request: NextRequest) {
     console.log(`  - 1次エリア(${area1Boundary}m以内): ${filteredResults.filter(p => p.area === 1).length}件`);
     console.log(`  - 2次エリア(${area2Boundary}m以内): ${filteredResults.filter(p => p.area === 2).length}件`);
     console.log(`  - 3次エリア(${area3Boundary}m以内): ${filteredResults.filter(p => p.area === 3).length}件`);
+
+    // APIレスポンスをキャプチャー（開発環境のみ）
+    if (isCaptureModeEnabled()) {
+      const responseData = {
+        results: filteredResults,
+        count: filteredResults.length,
+        byArea: {
+          area1: filteredResults.filter(p => p.area === 1).length,
+          area2: filteredResults.filter(p => p.area === 2).length,
+          area3: filteredResults.filter(p => p.area === 3).length,
+        },
+        metadata: {
+          keyword,
+          radiusKm,
+          center: { lat, lng },
+          timestamp: new Date().toISOString()
+        }
+      };
+
+      captureApiResponseToJson('places_api', responseData, {
+        subdirectory: 'captured-responses',
+        customFilename: 'places_response.json'
+      });
+    }
 
     return NextResponse.json({
       results: filteredResults,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { JStatResponse, PopulationData } from '@/types';
+import { captureApiResponseToJson, isCaptureModeEnabled } from '@/utils/captureApiResponse';
 
 export async function POST(request: NextRequest) {
   try {
@@ -66,6 +67,15 @@ export async function POST(request: NextRequest) {
         ?.find((c: any) => c['@name']?.includes('集計範囲'))
         ?.CLASS?.map((c: any) => `${c['@code']}:${c['@name']}`) || 'N/A'
     );
+
+    // APIレスポンスをキャプチャー（開発環境のみ）
+    if (isCaptureModeEnabled()) {
+      const filename = `jstat_${rangeType}_response.json`;
+      captureApiResponseToJson('jstat_api', data, {
+        subdirectory: 'captured-responses',
+        customFilename: filename
+      });
+    }
 
     // エラーチェック
     if (

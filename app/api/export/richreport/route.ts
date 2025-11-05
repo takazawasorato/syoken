@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
+import { generateReportFileName, encodeFileName } from '@/utils/fileNameGenerator';
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,17 +35,20 @@ export async function POST(request: NextRequest) {
     // Excelファイルをバッファとして生成
     const buffer = await workbook.xlsx.writeBuffer();
 
-    // ファイル名を生成（日本語対応のためURLエンコード）
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const filename = `market_analysis_report_${timestamp}.xlsx`;
-    const encodedFilename = encodeURIComponent('商圏分析レポート_' + timestamp + '.xlsx');
+    // ファイル名を生成（新しい命名規則を使用）
+    const filename = generateReportFileName({
+      rangeType: basicInfo.rangeType,
+      category: basicInfo.category,
+      address: basicInfo.address
+    });
+    const encodedFilename = encodeFileName(filename);
 
     // レスポンスを返す
     return new NextResponse(buffer, {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename="${filename}"; filename*=UTF-8''${encodedFilename}`,
+        'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodedFilename}`,
       },
     });
   } catch (error) {
@@ -315,15 +319,14 @@ async function createEnhancedReport(
     await createCompetitorsSheet(workbook, competitors, sheetPrefix);
   }
 
-  // 5. 各テーブルの詳細シート（両方モードの場合はスキップして重複を避ける）
-  if (!sheetPrefix) {
-    tables.forEach((table: any, index: number) => {
-      const tableNum = index + 1;
-      const sheetName = `T${tableNum.toString().padStart(2, '0')}_${table.TITLE.substring(0, 20)}`.replace(/[:\\\/\[\]\*\?]/g, '');
+  // 5. 各テーブルの詳細シート（両方モードの場合はsheetPrefixを付与して重複を避ける）
+  tables.forEach((table: any, index: number) => {
+    const tableNum = index + 1;
+    const baseSheetName = `T${tableNum.toString().padStart(2, '0')}_${table.TITLE.substring(0, 20)}`;
+    const sheetName = (sheetPrefix + baseSheetName).replace(/[:\\\/\[\]\*\?]/g, '');
 
-      createTableSheet(workbook, table, sheetName);
-    });
-  }
+    createTableSheet(workbook, table, sheetName);
+  });
 }
 
 /**
@@ -380,7 +383,7 @@ async function createMainDataSheet(
   ];
 
   genderCodes.forEach(({ code, name }) => {
-    const row = [name, ''];
+    const row: any[] = [name, ''];
     areaConfigs.forEach(area => {
       row.push(getValue(0, area.code, '@cat12', code));
     });
@@ -412,7 +415,7 @@ async function createMainDataSheet(
   mainData.push(['年齢層', '', ...createHeaders()]);
 
   table12AgeCodes.forEach(({ code, name }) => {
-    const row = [name, ''];
+    const row: any[] = [name, ''];
     areaConfigs.forEach(area => {
       const table12 = tables[11];
       const value = table12.DATA_INF.VALUE.find((v: any) =>
@@ -428,7 +431,7 @@ async function createMainDataSheet(
   mainData.push(['年齢層', '', ...createHeaders()]);
 
   table12AgeCodes.forEach(({ code, name }) => {
-    const row = [name, ''];
+    const row: any[] = [name, ''];
     areaConfigs.forEach(area => {
       const table12 = tables[11];
       const value = table12.DATA_INF.VALUE.find((v: any) =>
@@ -444,7 +447,7 @@ async function createMainDataSheet(
   mainData.push(['年齢層', '', ...createHeaders()]);
 
   table12AgeCodes.forEach(({ code, name }) => {
-    const row = [name, ''];
+    const row: any[] = [name, ''];
     areaConfigs.forEach(area => {
       const table12 = tables[11];
       const value = table12.DATA_INF.VALUE.find((v: any) =>
@@ -467,7 +470,7 @@ async function createMainDataSheet(
   ];
 
   householdCodes.forEach(({ code, name }) => {
-    const row = [name, ''];
+    const row: any[] = [name, ''];
     areaConfigs.forEach(area => {
       row.push(getValue(3, area.code, '@cat15', code));
     });
@@ -487,7 +490,7 @@ async function createMainDataSheet(
   ];
 
   industryCodes.forEach(({ code, name }) => {
-    const row = [name, ''];
+    const row: any[] = [name, ''];
     areaConfigs.forEach(area => {
       const table13 = tables[12];
       const value = table13.DATA_INF.VALUE.find((v: any) =>
@@ -505,7 +508,7 @@ async function createMainDataSheet(
   mainData.push(['産業', '', ...createHeaders()]);
 
   industryCodes.forEach(({ code, name }) => {
-    const row = [name, ''];
+    const row: any[] = [name, ''];
     areaConfigs.forEach(area => {
       const table13 = tables[12];
       const value = table13.DATA_INF.VALUE.find((v: any) =>
