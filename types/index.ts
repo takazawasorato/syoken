@@ -86,6 +86,17 @@ export interface PopulationData {
   rawData?: any; // jSTAT MAPの生データ
 }
 
+// 市区町村の所得データの型
+export interface MunicipalIncomeData {
+  municipalityName: string;  // 市区町村名（例: "札幌市"）
+  prefectureName: string;    // 都道府県名（例: "北海道"）
+  municipalityCode: string;  // 市区町村コード（団体コード）
+  dataYear: number;          // データ年度（例: 2024）
+  taxpayerCount: number | null;      // 所得割の納税義務者数（人）
+  totalIncome: number | null;        // 総所得金額等（千円）
+  averageIncome: number | null;      // 一人当たり所得（千円） - 計算値
+}
+
 // 分析リクエストの型
 export interface AnalysisRequest {
   address: string;
@@ -99,12 +110,14 @@ export interface AnalysisResult {
   coordinates: Coordinates;
   population: PopulationData;
   competitors: PlaceResult[];
+  incomeData?: MunicipalIncomeData | null;  // 市区町村の所得データ
 }
 
 // 「両方」モード用の分析結果の型
 export interface DualAnalysisResult {
   address: string;
   coordinates: Coordinates;
+  incomeData?: MunicipalIncomeData | null;  // 市区町村の所得データ
   circle: {
     population: PopulationData;
     competitors: PlaceResult[];
@@ -134,7 +147,9 @@ export interface ExportData {
     latitude: number;
     longitude: number;
     category: string;
-    radius: number;
+    radius?: number;
+    rangeType?: 'circle' | 'driveTime';
+    rangeDescription?: string;
   };
   population: PopulationData;
   competitors: Array<{
