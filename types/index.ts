@@ -111,6 +111,7 @@ export interface AnalysisResult {
   population: PopulationData;
   competitors: PlaceResult[];
   incomeData?: MunicipalIncomeData | null;  // 市区町村の所得データ
+  futurePopulationData?: FuturePopulationData | null;  // 市区町村の将来人口データ
 }
 
 // 「両方」モード用の分析結果の型
@@ -118,6 +119,7 @@ export interface DualAnalysisResult {
   address: string;
   coordinates: Coordinates;
   incomeData?: MunicipalIncomeData | null;  // 市区町村の所得データ
+  futurePopulationData?: FuturePopulationData | null;  // 市区町村の将来人口データ
   circle: {
     population: PopulationData;
     competitors: PlaceResult[];
@@ -160,4 +162,37 @@ export interface ExportData {
     userRatingsTotal?: number;
     placeId: string;
   }>;
+}
+
+// 将来人口データの型定義
+export interface FuturePopulationTimePoint {
+  year: number;
+  population: number;
+  index: number; // 2020年=100とした場合の指数
+}
+
+export interface FuturePopulationTrends {
+  peakYear: number;
+  peakPopulation: number;
+  changeRate2020to2050: number; // 2020年→2050年の変化率（%）
+  index2050: number;
+}
+
+export interface FuturePopulationData {
+  code: string; // 市区町村コード
+  name: string; // 市区町村名
+  prefecture: string; // 都道府県名
+  type: string | number; // 市などの別（a=都道府県、0=政令市の区、1=政令市、2=その他の市、3=町村）
+  timeSeries: FuturePopulationTimePoint[];
+  trends: FuturePopulationTrends;
+}
+
+export interface FuturePopulationJsonData {
+  dataSource: string;
+  dataYear: number;
+  description: string;
+  totalMunicipalities: number;
+  municipalities: {
+    [code: string]: FuturePopulationData;
+  };
 }

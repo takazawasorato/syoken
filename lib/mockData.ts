@@ -50,6 +50,27 @@ export function getMockAnalysisResult(): AnalysisResult {
       totalIncome: 2450158946,
       averageIncome: 3582,
     },
+    futurePopulationData: {
+      code: '26100',
+      name: '京都市',
+      prefecture: '京都府',
+      type: 1,
+      timeSeries: [
+        { year: 2020, population: 1463822, index: 100 },
+        { year: 2025, population: 1445238, index: 98.73 },
+        { year: 2030, population: 1421536, index: 97.11 },
+        { year: 2035, population: 1392677, index: 95.14 },
+        { year: 2040, population: 1357837, index: 92.76 },
+        { year: 2045, population: 1317259, index: 89.99 },
+        { year: 2050, population: 1272195, index: 86.91 },
+      ],
+      trends: {
+        peakYear: 2020,
+        peakPopulation: 1463822,
+        changeRate2020to2050: -13.09,
+        index2050: 86.91,
+      },
+    },
   };
 }
 
@@ -68,6 +89,27 @@ export function getMockDualAnalysisResult(): DualAnalysisResult {
       taxpayerCount: 683942,
       totalIncome: 2450158946,
       averageIncome: 3582,
+    },
+    futurePopulationData: {
+      code: '26100',
+      name: '京都市',
+      prefecture: '京都府',
+      type: 1,
+      timeSeries: [
+        { year: 2020, population: 1463822, index: 100 },
+        { year: 2025, population: 1445238, index: 98.73 },
+        { year: 2030, population: 1421536, index: 97.11 },
+        { year: 2035, population: 1392677, index: 95.14 },
+        { year: 2040, population: 1357837, index: 92.76 },
+        { year: 2045, population: 1317259, index: 89.99 },
+        { year: 2050, population: 1272195, index: 86.91 },
+      ],
+      trends: {
+        peakYear: 2020,
+        peakPopulation: 1463822,
+        changeRate2020to2050: -13.09,
+        index2050: 86.91,
+      },
     },
     circle: {
       population: {

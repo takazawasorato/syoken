@@ -113,6 +113,22 @@ export default function Home() {
         console.warn('所得データの取得に失敗しました:', error);
       }
 
+      // 将来人口データを取得（エラーは無視して続行）
+      let futurePopulationData = null;
+      try {
+        const futurePopResponse = await fetch('/api/future-population', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ geocodingResult: geocodingData }),
+        });
+        if (futurePopResponse.ok) {
+          const futurePopResult = await futurePopResponse.json();
+          futurePopulationData = futurePopResult.data;
+        }
+      } catch (error) {
+        console.warn('将来人口データの取得に失敗しました:', error);
+      }
+
       // 「両方」モードの場合、2回分析を実行
       if (data.rangeType === 'both') {
         // 円形範囲での分析
@@ -204,6 +220,7 @@ export default function Home() {
             lng: geocodingData.lng,
           },
           incomeData: incomeData,
+          futurePopulationData: futurePopulationData,
           circle: {
             population: circleStats,
             competitors: circlePlaces.results,
@@ -300,6 +317,7 @@ export default function Home() {
           population: statsData,
           competitors: placesData.results,
           incomeData: incomeData,
+          futurePopulationData: futurePopulationData,
         });
       }
       showToast('分析が完了しました', 'success');
